@@ -56,24 +56,26 @@ class VLMQuizSystem:
             self.processor = None
     
     def load_challenges(self):
-        """Load only the first 10 quiz challenges from short_subset.json with local image paths"""
+        """Load only the first 10 quiz challenges from short_subset.json with local image paths and numeric challenge names"""
         dataset_path = os.path.join(os.path.dirname(__file__), 'short_subset.json')
         try:
             with open(dataset_path, 'r') as f:
                 data = json.load(f)
             challenges = []
             for idx, entry in enumerate(data[:10]):
-                # Local filesystem path for backend
+                # Format answer: remove parentheses if present
+                answer = entry["ground_truth"].strip()
+                if answer.startswith("(") and answer.endswith(")") and len(answer) == 3:
+                    answer = answer[1]
                 local_image_path = os.path.join(os.path.dirname(__file__), entry['path'])
-                # Static URL for frontend
                 static_url = f"/static/{entry['path']}"
                 challenges.append({
                     "id": str(idx + 1),
                     "question": entry["question"],
                     "image_url": local_image_path,  # for backend/model
                     "image_static_url": static_url, # for frontend
-                    "correct_answer": entry["ground_truth"],
-                    "category": "aokvqa"
+                    "correct_answer": answer,
+                    "category": str(idx + 1)  # Use numeric challenge name
                 })
             return challenges
         except Exception as e:

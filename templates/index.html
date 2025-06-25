@@ -98,7 +98,7 @@
 
             <!-- Chat Interface -->
             <div class="lg:col-span-2">
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 h-[600px] flex flex-col">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 h-[800px] flex flex-col">
                     <!-- Chat Header -->
                     <div class="px-6 py-4 border-b border-slate-200">
                         <div class="flex items-center space-x-2">
@@ -201,7 +201,7 @@
                 challenges.forEach(challenge => {
                     const option = document.createElement('option');
                     option.value = challenge.id;
-                    option.textContent = `${challenge.category.replace('_', ' ')}`;
+                    option.textContent = `Challenge ${challenge.id}`;
                     challengeSelect.appendChild(option);
                 });
             } catch (error) {
