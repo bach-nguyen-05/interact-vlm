@@ -2,12 +2,6 @@
 
 A web UI that allows users to interact with a VLM to answer complex VQAs.
 
-## Features
-
-- **PaliGemma 3B Integration**: Uses the actual PaliGemma 3B model for visual question answering
-- **Interactive Chat Interface**: Natural conversation with the VLM
-- **Multiple Challenge Types**: Color identification, counting, object recognition, scene understanding
-
 ## Requirements
 
 - Python 3.8+
