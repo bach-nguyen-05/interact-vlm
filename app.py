@@ -56,37 +56,29 @@ class VLMQuizSystem:
             self.processor = None
     
     def load_challenges(self):
-        """Load quiz challenges with image URLs"""
-        return [
-            {
-                "id": "1",
-                "question": "What is the main color of the vehicle in the image?",
-                "image_url": "https://images.pexels.com/photos/170811/pexels-photo-170811.jpeg?auto=compress&cs=tinysrgb&w=800",
-                "correct_answer": "red",
-                "category": "color_identification"
-            },
-            {
-                "id": "2", 
-                "question": "How many people are visible in this image?",
-                "image_url": "https://images.pexels.com/photos/1267320/pexels-photo-1267320.jpeg?auto=compress&cs=tinysrgb&w=800",
-                "correct_answer": "3",
-                "category": "counting"
-            },
-            {
-                "id": "3",
-                "question": "What type of animal is shown in the image?",
-                "image_url": "https://images.pexels.com/photos/1108099/pexels-photo-1108099.jpeg?auto=compress&cs=tinysrgb&w=800",
-                "correct_answer": "dog",
-                "category": "object_recognition"
-            },
-            {
-                "id": "4",
-                "question": "What is the weather condition in this image?",
-                "image_url": "https://images.pexels.com/photos/531880/pexels-photo-531880.jpeg?auto=compress&cs=tinysrgb&w=800",
-                "correct_answer": "sunny",
-                "category": "scene_understanding"
-            }
-        ]
+        """Load only the first 10 quiz challenges from short_subset.json with local image paths"""
+        dataset_path = os.path.join(os.path.dirname(__file__), 'short_subset.json')
+        try:
+            with open(dataset_path, 'r') as f:
+                data = json.load(f)
+            challenges = []
+            for idx, entry in enumerate(data[:10]):
+                # Local filesystem path for backend
+                local_image_path = os.path.join(os.path.dirname(__file__), entry['path'])
+                # Static URL for frontend
+                static_url = f"/static/{entry['path']}"
+                challenges.append({
+                    "id": str(idx + 1),
+                    "question": entry["question"],
+                    "image_url": local_image_path,  # for backend/model
+                    "image_static_url": static_url, # for frontend
+                    "correct_answer": entry["ground_truth"],
+                    "category": "aokvqa"
+                })
+            return challenges
+        except Exception as e:
+            logger.error(f"Error loading dataset: {e}")
+            return []
     
     def load_image_from_url(self, url):
         """Load and process image from URL"""
@@ -99,16 +91,13 @@ class VLMQuizSystem:
             logger.error(f"Error loading image from {url}: {e}")
             return None
     
-    def generate_response(self, question, image_url):
+    def generate_response(self, question, image_path):
         """Generate VLM response to user question"""
         if not self.model or not self.processor:
-            return self.generate_mock_response(question, image_url)
-        
+            return "[ERROR] VLM model is not loaded. Please check the server logs."
         try:
-            # Load image
-            image = self.load_image_from_url(image_url)
-            if not image:
-                return "I'm having trouble accessing the image right now."
+            # Load image from local path
+            image = Image.open(image_path).convert('RGB')
             
             # Prepare prompt for PaliGemma
             prompt = f"Question: {question}"
@@ -138,7 +127,7 @@ class VLMQuizSystem:
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
-            return self.generate_mock_response(question, image_url)
+            return "[ERROR] VLM model failed to generate a response."
     
     def generate_mock_response(self, question, image_url):
         """Generate mock responses when model is not available"""
@@ -198,11 +187,12 @@ def get_challenge(challenge_id):
     if not challenge:
         return jsonify({'error': 'Challenge not found'}), 404
     
-    # Return challenge without the correct answer and difficulty
+    # Return challenge without the correct answer and with static image URL for frontend
     safe_challenge = {
         'id': challenge['id'],
         'question': challenge['question'],
-        'category': challenge['category']
+        'category': challenge['category'],
+        'image_url': challenge['image_static_url']
     }
     return jsonify(safe_challenge)
 
@@ -221,7 +211,7 @@ def ask_question():
     if not challenge:
         return jsonify({'error': 'Challenge not found'}), 404
     
-    # Generate VLM response
+    # Generate VLM response using local image path
     response = vlm_system.generate_response(question, challenge['image_url'])
     
     return jsonify({
