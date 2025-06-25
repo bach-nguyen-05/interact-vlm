@@ -40,10 +40,6 @@
                     </div>
                 </div>
                 <div class="flex items-center space-x-6">
-                    <div class="flex items-center space-x-2">
-                        <i data-lucide="trophy" class="w-5 h-5 text-amber-500"></i>
-                        <span id="score" class="font-semibold text-slate-700">0 pts</span>
-                    </div>
                     <div class="text-sm text-slate-600">
                         <span>Questions: <span id="question-count">0</span></span>
                         <span class="ml-2">•</span>
@@ -154,7 +150,6 @@
         // Application state
         let currentChallenge = null;
         let questionsAsked = 0;
-        let totalScore = 0;
         let isAnswered = false;
 
         // DOM elements
@@ -165,7 +160,6 @@
         const answerInput = document.getElementById('answer-input');
         const submitBtn = document.getElementById('submit-btn');
         const messagesContainer = document.getElementById('messages-container');
-        const scoreElement = document.getElementById('score');
         const questionCountElement = document.getElementById('question-count');
         const modelStatusElement = document.getElementById('model-status');
         const resultDisplay = document.getElementById('result-display');
@@ -324,7 +318,6 @@
                 const data = await response.json();
                 
                 isAnswered = true;
-                totalScore += data.score;
                 
                 // Show result
                 resultDisplay.className = `p-4 rounded-lg ${data.correct ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`;
@@ -333,7 +326,6 @@
                         <i data-lucide="${data.correct ? 'check-circle' : 'x-circle'}" class="w-5 h-5 ${data.correct ? 'text-green-600' : 'text-red-600'}"></i>
                         <span class="font-medium ${data.correct ? 'text-green-800' : 'text-red-800'}">${data.message}</span>
                     </div>
-                    <p class="text-sm ${data.correct ? 'text-green-700' : 'text-red-700'} mt-1">Score: +${data.score} points</p>
                 `;
                 resultDisplay.classList.remove('hidden');
                 
@@ -405,7 +397,6 @@
 
         // Update UI elements
         function updateUI() {
-            scoreElement.textContent = `${totalScore} pts`;
             questionCountElement.textContent = questionsAsked;
             
             // Disable inputs if answered

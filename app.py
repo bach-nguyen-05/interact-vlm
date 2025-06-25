@@ -239,15 +239,9 @@ def submit_answer():
     correct_answer = challenge['correct_answer'].lower()
     is_correct = answer == correct_answer
     
-    # Calculate score
-    base_score = 100
-    question_penalty = questions_asked * 5
-    final_score = max(base_score - question_penalty, 10) if is_correct else 0
-    
     return jsonify({
         'correct': is_correct,
         'correct_answer': challenge['correct_answer'],
-        'score': final_score,
         'message': 'Correct! Well done!' if is_correct else f'Not quite right. The answer was "{challenge["correct_answer"]}".'
     })
 

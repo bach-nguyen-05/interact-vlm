@@ -46,7 +46,6 @@ function App() {
   const [currentChallenge] = useState<Challenge>(sampleChallenges[0]);
   const [userAnswer, setUserAnswer] = useState('');
   const [isAnswered, setIsAnswered] = useState(false);
-  const [score, setScore] = useState(0);
   const [questionsAsked, setQuestionsAsked] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
   
@@ -159,7 +158,7 @@ function App() {
     setIsAnswered(true);
     
     if (isCorrect) {
-      setScore(prev => prev + Math.max(100 - (questionsAsked * 5) - (hintsUsed * 10), 10));
+      // No score update
     }
     
     const resultMessage: Message = {
@@ -190,10 +189,6 @@ function App() {
               </div>
             </div>
             <div className="flex items-center space-x-6">
-              <div className="flex items-center space-x-2">
-                <Trophy className="w-5 h-5 text-amber-500" />
-                <span className="font-semibold text-slate-700">{score} pts</span>
-              </div>
               <div className="text-sm text-slate-600">
                 Questions: {questionsAsked} | Hints: {hintsUsed}
               </div>
