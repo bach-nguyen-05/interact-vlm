@@ -1,0 +1,10 @@
+flask
+flask-cors
+transformers
+torch
+torchvision
+pillow
+accelerate
+bitsandbytes
+requests
+numpy

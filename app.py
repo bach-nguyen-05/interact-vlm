@@ -1,0 +1,274 @@
+from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
+import torch
+from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
+from PIL import Image
+import requests
+import json
+import os
+import logging
+from datetime import datetime
+import random
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+CORS(app)
+
+class VLMQuizSystem:
+    def __init__(self):
+        self.processor = None
+        self.model = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.current_image = None
+        self.challenges = self.load_challenges()
+        self.load_model()
+    
+    def load_model(self):
+        """Load PaliGemma model with optimizations for inference"""
+        try:
+            logger.info("Loading PaliGemma 3B model...")
+            model_id = "google/paligemma-3b-mix-224"
+            
+            # Load processor
+            self.processor = PaliGemmaProcessor.from_pretrained(model_id)
+            
+            # Load model with optimizations
+            self.model = PaliGemmaForConditionalGeneration.from_pretrained(
+                model_id,
+                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                low_cpu_mem_usage=True,
+                device_map="auto" if self.device == "cuda" else None,
+                load_in_8bit=True if self.device == "cuda" else False
+            )
+            
+            if self.device == "cpu":
+                self.model = self.model.to(self.device)
+            
+            logger.info(f"Model loaded successfully on {self.device}")
+            
+        except Exception as e:
+            logger.error(f"Error loading model: {e}")
+            # Fallback to mock responses if model fails to load
+            self.model = None
+            self.processor = None
+    
+    def load_challenges(self):
+        """Load quiz challenges with image URLs"""
+        return [
+            {
+                "id": "1",
+                "question": "What is the main color of the vehicle in the image?",
+                "image_url": "https://images.pexels.com/photos/170811/pexels-photo-170811.jpeg?auto=compress&cs=tinysrgb&w=800",
+                "correct_answer": "red",
+                "category": "color_identification"
+            },
+            {
+                "id": "2", 
+                "question": "How many people are visible in this image?",
+                "image_url": "https://images.pexels.com/photos/1267320/pexels-photo-1267320.jpeg?auto=compress&cs=tinysrgb&w=800",
+                "correct_answer": "3",
+                "category": "counting"
+            },
+            {
+                "id": "3",
+                "question": "What type of animal is shown in the image?",
+                "image_url": "https://images.pexels.com/photos/1108099/pexels-photo-1108099.jpeg?auto=compress&cs=tinysrgb&w=800",
+                "correct_answer": "dog",
+                "category": "object_recognition"
+            },
+            {
+                "id": "4",
+                "question": "What is the weather condition in this image?",
+                "image_url": "https://images.pexels.com/photos/531880/pexels-photo-531880.jpeg?auto=compress&cs=tinysrgb&w=800",
+                "correct_answer": "sunny",
+                "category": "scene_understanding"
+            }
+        ]
+    
+    def load_image_from_url(self, url):
+        """Load and process image from URL"""
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            image = Image.open(requests.get(url, stream=True).raw)
+            return image.convert('RGB')
+        except Exception as e:
+            logger.error(f"Error loading image from {url}: {e}")
+            return None
+    
+    def generate_response(self, question, image_url):
+        """Generate VLM response to user question"""
+        if not self.model or not self.processor:
+            return self.generate_mock_response(question, image_url)
+        
+        try:
+            # Load image
+            image = self.load_image_from_url(image_url)
+            if not image:
+                return "I'm having trouble accessing the image right now."
+            
+            # Prepare prompt for PaliGemma
+            prompt = f"Question: {question}"
+            
+            # Process inputs
+            inputs = self.processor(prompt, image, return_tensors="pt").to(self.device)
+            
+            # Generate response
+            with torch.no_grad():
+                output = self.model.generate(
+                    **inputs,
+                    max_new_tokens=150,
+                    do_sample=True,
+                    temperature=0.7,
+                    top_p=0.9,
+                    pad_token_id=self.processor.tokenizer.eos_token_id
+                )
+            
+            # Decode response
+            response = self.processor.decode(output[0], skip_special_tokens=True)
+            
+            # Extract only the generated response (remove the input prompt)
+            if prompt in response:
+                response = response.replace(prompt, "").strip()
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error generating response: {e}")
+            return self.generate_mock_response(question, image_url)
+    
+    def generate_mock_response(self, question, image_url):
+        """Generate mock responses when model is not available"""
+        question_lower = question.lower()
+        
+        # Simple keyword-based responses for demo
+        if any(word in question_lower for word in ['color', 'what color']):
+            responses = [
+                "I can see a prominent red color in the image.",
+                "The main color appears to be red.",
+                "There's a bright red object that stands out."
+            ]
+        elif any(word in question_lower for word in ['how many', 'count', 'number']):
+            responses = [
+                "I can count three distinct objects/people.",
+                "There appear to be 3 items in the scene.",
+                "I see three separate elements."
+            ]
+        elif any(word in question_lower for word in ['animal', 'pet', 'dog', 'cat']):
+            responses = [
+                "I can see a dog in the image.",
+                "There's a canine animal visible.",
+                "It appears to be a domestic dog."
+            ]
+        elif any(word in question_lower for word in ['weather', 'sky', 'sunny', 'cloudy']):
+            responses = [
+                "The weather looks sunny and clear.",
+                "It appears to be a bright, sunny day.",
+                "The sky looks clear with good lighting."
+            ]
+        else:
+            responses = [
+                "I can see details that might help answer your question.",
+                "Let me look more carefully at that aspect of the image.",
+                "That's an interesting question about what I'm seeing.",
+                "I notice something relevant to your question."
+            ]
+        
+        return random.choice(responses)
+
+# Initialize VLM system
+vlm_system = VLMQuizSystem()
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/api/challenges')
+def get_challenges():
+    """Get available challenges"""
+    return jsonify(vlm_system.challenges)
+
+@app.route('/api/challenge/<challenge_id>')
+def get_challenge(challenge_id):
+    """Get specific challenge details"""
+    challenge = next((c for c in vlm_system.challenges if c['id'] == challenge_id), None)
+    if not challenge:
+        return jsonify({'error': 'Challenge not found'}), 404
+    
+    # Return challenge without the correct answer and difficulty
+    safe_challenge = {
+        'id': challenge['id'],
+        'question': challenge['question'],
+        'category': challenge['category']
+    }
+    return jsonify(safe_challenge)
+
+@app.route('/api/ask', methods=['POST'])
+def ask_question():
+    """Handle user questions to VLM"""
+    data = request.json
+    question = data.get('question', '')
+    challenge_id = data.get('challenge_id', '')
+    
+    if not question or not challenge_id:
+        return jsonify({'error': 'Question and challenge_id required'}), 400
+    
+    # Find challenge
+    challenge = next((c for c in vlm_system.challenges if c['id'] == challenge_id), None)
+    if not challenge:
+        return jsonify({'error': 'Challenge not found'}), 404
+    
+    # Generate VLM response
+    response = vlm_system.generate_response(question, challenge['image_url'])
+    
+    return jsonify({
+        'response': response,
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/api/submit', methods=['POST'])
+def submit_answer():
+    """Submit answer for challenge"""
+    data = request.json
+    answer = data.get('answer', '').strip().lower()
+    challenge_id = data.get('challenge_id', '')
+    questions_asked = data.get('questions_asked', 0)
+    
+    if not answer or not challenge_id:
+        return jsonify({'error': 'Answer and challenge_id required'}), 400
+    
+    # Find challenge
+    challenge = next((c for c in vlm_system.challenges if c['id'] == challenge_id), None)
+    if not challenge:
+        return jsonify({'error': 'Challenge not found'}), 404
+    
+    # Check answer
+    correct_answer = challenge['correct_answer'].lower()
+    is_correct = answer == correct_answer
+    
+    # Calculate score
+    base_score = 100
+    question_penalty = questions_asked * 5
+    final_score = max(base_score - question_penalty, 10) if is_correct else 0
+    
+    return jsonify({
+        'correct': is_correct,
+        'correct_answer': challenge['correct_answer'],
+        'score': final_score,
+        'message': 'Correct! Well done!' if is_correct else f'Not quite right. The answer was "{challenge["correct_answer"]}".'
+    })
+
+@app.route('/api/model-status')
+def model_status():
+    """Get model loading status"""
+    return jsonify({
+        'model_loaded': vlm_system.model is not None,
+        'device': vlm_system.device,
+        'using_mock': vlm_system.model is None
+    })
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
