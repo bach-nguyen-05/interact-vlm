@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Eye, Brain, Trophy, Lightbulb, CheckCircle, XCircle } from 'lucide-react';
+import { Send, Eye, Brain, Lightbulb, CheckCircle, XCircle } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -11,27 +11,9 @@ interface Message {
 interface Challenge {
   id: string;
   question: string;
-  correctAnswer: string;
-  imageDescription: string;
-  hints: string[];
+  correct_answer: string;
+  image_static_url: string;
 }
-
-const sampleChallenges: Challenge[] = [
-  {
-    id: '1',
-    question: 'What color is the main object in the center of the image?',
-    correctAnswer: 'red',
-    imageDescription: 'A bright red sports car parked in front of a modern glass building',
-    hints: ['The object is a vehicle', 'It\'s commonly seen on roads', 'This color is often associated with speed']
-  },
-  {
-    id: '2',
-    question: 'How many people are visible in this image?',
-    correctAnswer: '3',
-    imageDescription: 'Three people sitting on a park bench, two adults and one child',
-    hints: ['Look for human figures', 'Count carefully', 'Some might be partially hidden']
-  }
-];
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([
@@ -43,14 +25,23 @@ function App() {
     }
   ]);
   const [inputMessage, setInputMessage] = useState('');
-  const [currentChallenge] = useState<Challenge>(sampleChallenges[0]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [currentChallenge, setCurrentChallenge] = useState<Challenge | null>(null);
   const [userAnswer, setUserAnswer] = useState('');
   const [isAnswered, setIsAnswered] = useState(false);
   const [questionsAsked, setQuestionsAsked] = useState(0);
-  const [hintsUsed, setHintsUsed] = useState(0);
-  
+  const [trace, setTrace] = useState<{question: string, vlm_answer: string}[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch('/api/challenges')
+      .then(res => res.json())
+      .then(data => {
+        setChallenges(data);
+        if (data.length > 0) setCurrentChallenge(data[0]);
+      });
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -60,71 +51,27 @@ function App() {
     scrollToBottom();
   }, [messages]);
 
-  const generateVLMResponse = (userQuestion: string): string => {
-    const question = userQuestion.toLowerCase();
-    const description = currentChallenge.imageDescription.toLowerCase();
-    
-    if (question.includes('color') || question.includes('what color')) {
-      if (description.includes('red')) return 'I can see something that is predominantly red in color.';
-      return 'The main colors I see are various shades, but there\'s one particularly vibrant color that stands out.';
-    }
-    
-    if (question.includes('how many') || question.includes('count')) {
-      if (description.includes('three people')) return 'I can count three distinct figures in the image.';
-      return 'Let me count carefully... I see multiple items/people in the scene.';
-    }
-    
-    if (question.includes('what is') || question.includes('what\'s')) {
-      if (description.includes('car')) return 'I see a vehicle, specifically what appears to be an automobile.';
-      if (description.includes('people')) return 'I see people in what looks like a casual setting.';
-      return 'I can see objects and possibly people in the scene.';
-    }
-    
-    if (question.includes('where') || question.includes('location')) {
-      if (description.includes('building')) return 'The setting appears to be near a modern building structure.';
-      if (description.includes('park')) return 'This looks like it could be in a park or outdoor recreational area.';
-      return 'The location seems to be outdoors with some architectural elements visible.';
-    }
-    
-    if (question.includes('size') || question.includes('big') || question.includes('small')) {
-      return 'The main subject appears to be of moderate to large size relative to other elements in the image.';
-    }
-    
-    // Default responses
-    const defaultResponses = [
-      'That\'s an interesting question. I can see details that might help you figure out the answer.',
-      'Let me look more carefully at that aspect of the image...',
-      'I notice something that might be relevant to your question.',
-      'Good question! I can see elements that relate to what you\'re asking about.'
-    ];
-    
-    return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
-  };
-
   const handleSendMessage = () => {
-    if (!inputMessage.trim() || isAnswered) return;
-
+    if (!inputMessage.trim() || isAnswered || !currentChallenge) return;
     const userMessage: Message = {
       id: Date.now().toString(),
       type: 'user',
       content: inputMessage,
       timestamp: new Date()
     };
-
     setMessages(prev => [...prev, userMessage]);
     setQuestionsAsked(prev => prev + 1);
-    
-    // Simulate VLM processing time
+    // Simulate VLM processing time (replace with real API if needed)
     setTimeout(() => {
       const vlmResponse: Message = {
         id: (Date.now() + 1).toString(),
         type: 'vlm',
-        content: generateVLMResponse(inputMessage),
+        content: 'I am analyzing the image and question...',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, vlmResponse]);
+      setTrace(prev => [...prev, { question: inputMessage, vlm_answer: vlmResponse.content }]);
     }, 1000 + Math.random() * 1000);
-
     setInputMessage('');
     inputRef.current?.focus();
   };
@@ -136,41 +83,51 @@ function App() {
     }
   };
 
-  const useHint = () => {
-    if (hintsUsed >= currentChallenge.hints.length || isAnswered) return;
-    
-    const hint = currentChallenge.hints[hintsUsed];
-    const hintMessage: Message = {
-      id: Date.now().toString(),
-      type: 'vlm',
-      content: `💡 Hint: ${hint}`,
-      timestamp: new Date()
-    };
-    
-    setMessages(prev => [...prev, hintMessage]);
-    setHintsUsed(prev => prev + 1);
-  };
-
-  const submitAnswer = () => {
-    if (!userAnswer.trim() || isAnswered) return;
-    
-    const isCorrect = userAnswer.toLowerCase().trim() === currentChallenge.correctAnswer.toLowerCase();
+  const submitAnswer = async () => {
+    if (!userAnswer.trim() || isAnswered || !currentChallenge) return;
+    const isCorrect = userAnswer.trim().toUpperCase() === currentChallenge.correct_answer.toUpperCase();
     setIsAnswered(true);
-    
-    if (isCorrect) {
-      // No score update
-    }
-    
     const resultMessage: Message = {
       id: Date.now().toString(),
       type: 'vlm',
       content: isCorrect 
-        ? `🎉 Correct! The answer is "${currentChallenge.correctAnswer}". Well done!`
-        : `❌ Not quite right. The correct answer was "${currentChallenge.correctAnswer}". Better luck next time!`,
+        ? `🎉 Correct! The answer is "${currentChallenge.correct_answer}". Well done!`
+        : `❌ Incorrect. The correct answer was "${currentChallenge.correct_answer}".`,
       timestamp: new Date()
     };
-    
     setMessages(prev => [...prev, resultMessage]);
+    // Save trace to backend
+    try {
+      await fetch('/api/save-trace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challenge_id: currentChallenge.id,
+          trace,
+          user: 'anonymous' // or use a real user id if available
+        })
+      });
+    } catch (e) {
+      // Optionally handle error
+    }
+  };
+
+  const handleChallengeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selected = challenges.find(c => c.id === e.target.value);
+    if (selected) {
+      setCurrentChallenge(selected);
+      setMessages([
+        {
+          id: '1',
+          type: 'vlm',
+          content: 'Hello! I can see an image that you cannot. Ask me questions about what I see to help you answer the visual question.',
+          timestamp: new Date()
+        }
+      ]);
+      setUserAnswer('');
+      setIsAnswered(false);
+      setQuestionsAsked(0);
+    }
   };
 
   return (
@@ -190,7 +147,7 @@ function App() {
             </div>
             <div className="flex items-center space-x-6">
               <div className="text-sm text-slate-600">
-                Questions: {questionsAsked} | Hints: {hintsUsed}
+                Questions: {questionsAsked}
               </div>
             </div>
           </div>
@@ -206,66 +163,70 @@ function App() {
                 <Eye className="w-5 h-5 text-blue-600" />
                 <h2 className="text-lg font-semibold text-slate-900">Challenge</h2>
               </div>
-              
-              <div className="bg-blue-50 rounded-lg p-4 mb-6">
-                <p className="text-slate-800 font-medium">{currentChallenge.question}</p>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 mb-2">Select Challenge</label>
+                <select
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  value={currentChallenge?.id || ''}
+                  onChange={handleChallengeChange}
+                >
+                  {challenges.map((c) => (
+                    <option key={c.id} value={c.id}>{`Challenge ${c.id}`}</option>
+                  ))}
+                </select>
               </div>
-
-              {/* Answer Submission */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Your Answer
-                  </label>
-                  <input
-                    type="text"
-                    value={userAnswer}
-                    onChange={(e) => setUserAnswer(e.target.value)}
-                    disabled={isAnswered}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-slate-100"
-                    placeholder="Enter your answer..."
-                  />
-                </div>
-                
-                <div className="flex space-x-2">
-                  <button
-                    onClick={submitAnswer}
-                    disabled={!userAnswer.trim() || isAnswered}
-                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isAnswered ? (
-                      <div className="flex items-center justify-center space-x-2">
-                        {userAnswer.toLowerCase().trim() === currentChallenge.correctAnswer.toLowerCase() ? (
-                          <CheckCircle className="w-4 h-4" />
-                        ) : (
-                          <XCircle className="w-4 h-4" />
-                        )}
-                        <span>Submitted</span>
-                      </div>
-                    ) : (
-                      'Submit Answer'
-                    )}
-                  </button>
-                  
-                  <button
-                    onClick={useHint}
-                    disabled={hintsUsed >= currentChallenge.hints.length || isAnswered}
-                    className="px-4 py-2 border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Lightbulb className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <p className="text-xs text-slate-500">
-                  Hints remaining: {currentChallenge.hints.length - hintsUsed}
-                </p>
-              </div>
+              {currentChallenge && (
+                <>
+                  <div className="bg-blue-50 rounded-lg p-4 mb-6">
+                    <img
+                      src={currentChallenge.image_static_url}
+                      alt="Challenge visual"
+                      className="w-full h-48 object-contain rounded mb-2"
+                    />
+                    <p className="text-slate-800 font-medium whitespace-pre-line">{currentChallenge.question}</p>
+                  </div>
+                  {/* Answer Submission */}
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Your Answer
+                      </label>
+                      <input
+                        type="text"
+                        value={userAnswer}
+                        onChange={(e) => setUserAnswer(e.target.value)}
+                        disabled={isAnswered}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-slate-100"
+                        placeholder="Enter your answer (A, B, C, D)..."
+                      />
+                    </div>
+                    <button
+                      onClick={submitAnswer}
+                      disabled={!userAnswer.trim() || isAnswered}
+                      className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isAnswered ? (
+                        <div className="flex items-center justify-center space-x-2">
+                          {userAnswer.trim().toUpperCase() === currentChallenge.correct_answer.toUpperCase() ? (
+                            <CheckCircle className="w-4 h-4" />
+                          ) : (
+                            <XCircle className="w-4 h-4" />
+                          )}
+                          <span>Submitted</span>
+                        </div>
+                      ) : (
+                        'Submit Answer'
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
           {/* Chat Interface */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-[600px] flex flex-col">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-[800px] flex flex-col">
               {/* Chat Header */}
               <div className="px-6 py-4 border-b border-slate-200">
                 <div className="flex items-center space-x-2">
@@ -274,7 +235,6 @@ function App() {
                   <span className="text-sm text-slate-500">• Online</span>
                 </div>
               </div>
-
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 {messages.map((message) => (
@@ -295,7 +255,6 @@ function App() {
                 ))}
                 <div ref={messagesEndRef} />
               </div>
-
               {/* Input */}
               <div className="p-6 border-t border-slate-200">
                 <div className="flex space-x-3">
